@@ -62,7 +62,7 @@ Dockerfile                 multi-stage build (frontend + backend)
 
 Enable in setup; deploy automatically picks up the right bicep modules:
 
-- **RAG** — Azure AI Search for knowledge retrieval (backend wire-up TODO)
+- **RAG** — Azure AI Search for knowledge retrieval
 - **Custom domain** — point a domain at the deployed Container App
 - **Custom voice** — Azure Personal Voice: enable in setup, paste your Speaker Profile ID into `settings.json` under `customVoice.profileId`, re-run `./deploy`. The backend reads it as `AZURE_PERSONAL_VOICE_PROFILE_ID` and the frontend switches to the `azure-personal` voice schema. Provisioning the Speech / AI Services account and onboarding the voice in Speech Studio is still a manual one-time step.
 
