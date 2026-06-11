@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Env files
+.env
+.env.local
+.env.*.local
+# NOTE: frontend/.env.production is intentionally NOT gitignored. deploy.js
+# writes it transiently into the build context (and removes it on finally)
+# so vite picks up VITE_* values at build time. `az acr build` honors
+# .gitignore when packing the upload tarball, so any rule that excludes
+# this file silently strips it from the build, leaving MSAL config empty.
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Azure
+.azure/*.cache
+
+# Scaffolded output
+/settings.json

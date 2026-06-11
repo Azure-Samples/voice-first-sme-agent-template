@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Agent Template - setup wizard entrypoint.
+# Bootstraps the Node wizard in setup-wizard/ and runs it.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WIZARD_DIR="$SCRIPT_DIR/setup-wizard"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "ERROR: Node.js is required. Install Node 18+ and re-run ./setup." >&2
+  exit 1
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "ERROR: npm is required. Install Node.js (which bundles npm) and re-run." >&2
+  exit 1
+fi
+
+if [[ ! -d "$WIZARD_DIR/node_modules" ]]; then
+  echo "Installing wizard dependencies (first run only)..."
+  ( cd "$WIZARD_DIR" && npm ci --silent --no-audit --no-fund ) \
+    || ( cd "$WIZARD_DIR" && npm install --silent --no-audit --no-fund )
+fi
+
+exec node "$WIZARD_DIR/setup.js" "$@"

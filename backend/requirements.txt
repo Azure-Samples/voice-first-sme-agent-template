@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+PyJWT
+cryptography
+python-dotenv
+httpx
+websockets
+azure-search-documents
+azure-identity
+azure-cosmos
+# Required by azure.cosmos.aio (async client uses aiohttp transport).
+# Not pulled in automatically — the SDK leaves it to the consumer so
+# sync-only users don't pay the dependency cost.
+aiohttp

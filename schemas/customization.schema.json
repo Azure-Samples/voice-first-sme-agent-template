@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent P customization",
+  "description": "Source of truth for agent persona, prompt content, and frontend copy. Rendered into system_prompt.txt by scripts/render.py.",
+  "type": "object",
+  "required": ["schemaVersion", "useCase", "persona"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semver of the customization schema this file targets."
+    },
+    "useCase": {
+      "type": "string",
+      "enum": ["sme", "sales_coach"],
+      "description": "Selects the Jinja2 template under templates/system_prompt/."
+    },
+    "persona": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agent display name."
+        },
+        "role": {
+          "type": "string",
+          "description": "Short role label (e.g. 'subject matter expert', 'sales coaching assistant')."
+        },
+        "audience": {
+          "type": "string",
+          "description": "Who the agent is for. Be specific about role, context, and what they need."
+        },
+        "tone": {
+          "type": "string",
+          "description": "How the agent sounds. Short adjective phrase woven into the 'You are X' line."
+        }
+      }
+    },
+    "goals": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "description": "Primary outcome the user should leave with."
+        },
+        "successDefinition": {
+          "type": "string",
+          "description": "What a successful interaction looks like."
+        }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "SME use case only. Subject area and source corpus description.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Subject area the agent explains (e.g. 'Azure Cloud Architecture')."
+        },
+        "sourceDescription": {
+          "type": "string",
+          "description": "Plain-language description of the approved knowledge base."
+        }
+      }
+    },
+    "methodology": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Sales Coach use case: sales framework. SME use case: optional methodology.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the framework or methodology."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Multi-line description. Stages, exit signals, key activities."
+        },
+        "keyPrinciples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bulleted principles or guardrails for the methodology."
+        }
+      }
+    },
+    "coachingPrompts": {
+      "type": "array",
+      "description": "Sales Coach only. Situational coaching cues.",
+      "items": {
+        "type": "object",
+        "required": ["trigger", "prompt"],
+        "additionalProperties": true,
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "description": "Short label for the coaching situation (e.g. 'Feature-focused')."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Coaching question the agent should ask in that situation."
+          }
+        }
+      }
+    },
+    "sessionStructure": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Shape of a typical session. SKILL.md Item 4. 'open' = follow the user's lead; 'staged' = move through named stages; 'roleplay' = agent simulates a counter-party; 'hybrid' = freeform shape described in `description`.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "staged" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["stages"],
+            "properties": {
+              "stages": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["roleplay", "hybrid"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["description"],
+            "properties": {
+              "description": { "minLength": 1 }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["open", "staged", "roleplay", "hybrid"],
+          "description": "Conversation shape selector."
+        },
+        "stages": {
+          "type": "array",
+          "description": "Named stages used when type=='staged'. Order matters; the agent moves through them in sequence.",
+          "items": {
+            "type": "object",
+            "required": ["name", "description"],
+            "additionalProperties": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short stage name (e.g. 'Orientation')."
+              },
+              "description": {
+                "type": "string",
+                "description": "What happens in this stage."
+              }
+            }
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Verbatim block rendered when type=='roleplay' or 'hybrid'. Ignored for 'open' and 'staged'."
+        }
+      }
+    },
+    "interactionLoop": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Per-turn feedback loop (Reflect → Clarify → Elicit → Self-critique → Feedback). SKILL.md Item 5. Enable for coaching/teaching agents; disable for pure FAQ-style explainers.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, the rendered prompt includes the interaction loop section. When false, the loop is suppressed."
+        },
+        "customPhrasing": {
+          "type": "string",
+          "description": "Optional custom phrasing for the elicit / self-critique steps. Inlined as a guidance paragraph after the loop steps when non-empty."
+        }
+      }
+    },
+    "voiceProfile": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "acknowledgments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Short verbal acknowledgments the agent uses (e.g. 'Got it.')."
+        },
+        "emphasisStyle": {
+          "type": "string",
+          "description": "How the agent emphasizes key points."
+        },
+        "framingStyle": {
+          "type": "string",
+          "description": "How the agent organizes ideas (e.g. 'Uses numbered frameworks')."
+        },
+        "customTraits": {
+          "type": "array",
+          "description": "Extra voice rows beyond the standard three.",
+          "items": {
+            "type": "object",
+            "required": ["label", "value"],
+            "additionalProperties": true,
+            "properties": {
+              "label": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "knowledgeBase": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "triggerDescription": {
+          "type": "string",
+          "description": "Plain-language description of what kinds of questions should trigger a knowledge base search."
+        },
+        "incorporationStyle": {
+          "type": "string",
+          "description": "How the agent should weave retrieved content into responses."
+        },
+        "noResultResponse": {
+          "type": "string",
+          "description": "Exact phrasing the agent uses when the knowledge base has no answer."
+        }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "customAdditions": {
+          "type": "array",
+          "description": "Extra boundary lines appended after the standard refusal categories.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "frontendCopy": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "User-facing strings for the frontend. Mirrored in settings.json today; customization.json is the long-term source of truth.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Browser tab title and header text."
+        },
+        "greeting": {
+          "type": "string",
+          "description": "First spoken line from the agent."
+        },
+        "description": {
+          "type": "string",
+          "description": "First overview paragraph on the landing page."
+        },
+        "description2": {
+          "type": "string",
+          "description": "Second overview paragraph on the landing page."
+        },
+        "buttonLabel": {
+          "type": "string",
+          "description": "Call-to-action label on the landing page."
+        }
+      }
+    }
+  }
+}

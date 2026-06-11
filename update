@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# Agent Template — pull upstream changes into your fork.
+#
+# Fetches release tags from the upstream template repo and merges the
+# latest v* release tag into your current branch by default.
+# Customer-owned files (settings.json, agents/<name>/*) are
+# allowed to be dirty. Platform files (backend/, frontend/, infra/,
+# Dockerfile, scripts/) come from upstream and will update on merge.
+# Prompt prose under agents/ can still conflict if upstream changed the
+# same prompt before the data-first prompt model lands.
+#
+# Usage: ./update [--remote <name>] [--ref <name>] [--dry-run]
+#   --remote   upstream remote name (default: upstream)
+#   --ref      branch, tag, or commit to merge (default: latest v* release tag)
+#   --dry-run  show the upstream diff preview without merging
+#
+# Setup (first time): add the upstream remote
+#   git remote add upstream <url-of-template-repo>
+
+set -euo pipefail
+
+REMOTE="upstream"
+REF=""
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --remote) REMOTE="$2"; shift 2 ;;
+    --ref) REF="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "ERROR: git is required." >&2
+  exit 1
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "ERROR: not inside a git repository." >&2
+  exit 1
+fi
+
+if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
+  echo "ERROR: git remote '$REMOTE' not configured." >&2
+  echo "  Add it once with: git remote add $REMOTE <template-repo-url>" >&2
+  exit 1
+fi
+
+# Allowlist customer-owned paths and flag any dirty file outside them.
+# New platform files added in future template versions are protected
+# automatically. Customer-owned paths live under agents/<name>/.
+# settings.json and .env are gitignored and won't appear in `git status`.
+DIRTY=$(git status --porcelain 2>/dev/null | grep -vE '^.. agents/' || true)
+if [[ -n "$DIRTY" ]]; then
+  echo "WARNING: local modifications outside customer-owned paths:" >&2
+  echo "$DIRTY" >&2
+  echo "" >&2
+  echo "  Upstream changes may conflict with these. Stash or commit before continuing." >&2
+  echo "  Customer-owned paths under agents/<name>/ are safe to keep dirty." >&2
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "  Continuing because --dry-run will not merge." >&2
+  else
+    exit 1
+  fi
+fi
+
+read_local_version() {
+  if [[ -f VERSION ]]; then
+    tr -d '[:space:]' < VERSION
+  else
+    echo "unknown"
+  fi
+}
+
+resolve_latest_release_tag() {
+  local remote_main="refs/remotes/$REMOTE/main"
+  local latest=""
+
+  if git show-ref --verify --quiet "$remote_main"; then
+    latest=$(git tag -l 'v*' --sort=-v:refname --merged "$remote_main" | head -n 1)
+  else
+    latest=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
+  fi
+
+  if [[ -z "$latest" ]]; then
+    echo "ERROR: no upstream release tags found." >&2
+    echo "  Expected tags like v0.1.0. Ask upstream to publish a release tag," >&2
+    echo "  or opt into unreleased work explicitly with: ./update --ref $REMOTE/main" >&2
+    exit 1
+  fi
+
+  echo "$latest"
+}
+
+resolve_merge_target() {
+  local ref="$1"
+
+  if [[ -z "$ref" ]]; then
+    resolve_latest_release_tag
+    return
+  fi
+
+  if git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    echo "$ref"
+    return
+  fi
+
+  if git rev-parse --verify --quiet "$REMOTE/${ref}^{commit}" >/dev/null; then
+    echo "$REMOTE/$ref"
+    return
+  fi
+
+  echo "==> Fetching ref '$ref' from $REMOTE..." >&2
+  git fetch "$REMOTE" "$ref"
+  echo "FETCH_HEAD"
+}
+
+print_changelog_preview() {
+  local target_ref="$1"
+  local current_version target_version base_ref diff_output
+
+  current_version=$(read_local_version)
+  target_version=$(git show "${target_ref}:VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -z "$target_version" ]]; then
+    target_version="unknown"
+  fi
+
+  echo "==> Resolved update target: $target_ref"
+  echo "    Current VERSION: $current_version"
+  echo "    Target VERSION:  $target_version"
+  echo ""
+
+  if git rev-parse --verify --quiet "v${current_version}^{commit}" >/dev/null; then
+    base_ref="v${current_version}"
+  else
+    base_ref="HEAD"
+  fi
+
+  echo "==> CHANGELOG preview ($base_ref..$target_ref)"
+  diff_output=$(git diff --no-ext-diff --no-color "$base_ref" "$target_ref" -- CHANGELOG.md || true)
+  if [[ -z "$diff_output" ]]; then
+    echo "    No CHANGELOG.md changes found."
+  else
+    echo "$diff_output" | sed 's/^/    /'
+  fi
+  echo ""
+}
+
+print_diff_preview() {
+  local target_ref="$1"
+  local merge_base
+
+  if ! merge_base=$(git merge-base HEAD "$target_ref"); then
+    echo "ERROR: could not determine a merge base between HEAD and $target_ref." >&2
+    exit 1
+  fi
+
+  echo "==> Dry run: upstream diff preview ($merge_base..$target_ref)"
+  echo "    This shows upstream changes since your current merge base."
+  echo "    The real merge may still report conflicts if your local edits overlap."
+  echo ""
+
+  if git diff --quiet --no-ext-diff "$merge_base" "$target_ref"; then
+    echo "    No file changes found."
+    return
+  fi
+
+  echo "==> File summary"
+  git diff --stat --no-ext-diff --no-color "$merge_base" "$target_ref" | sed 's/^/    /'
+  echo ""
+  echo "==> Full diff"
+  git diff --no-ext-diff --no-color "$merge_base" "$target_ref" | sed 's/^/    /'
+  echo ""
+}
+
+echo "==> Fetching tags from $REMOTE..."
+git fetch "$REMOTE" --tags
+MERGE_TARGET=$(resolve_merge_target "$REF")
+print_changelog_preview "$MERGE_TARGET"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  print_diff_preview "$MERGE_TARGET"
+  echo "Dry run complete. No merge performed."
+  exit 0
+fi
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "==> Merging $MERGE_TARGET into $CURRENT_BRANCH..."
+set +e
+git merge -m "Merge template update $MERGE_TARGET into $CURRENT_BRANCH" "$MERGE_TARGET"
+MERGE_STATUS=$?
+set -e
+if [[ $MERGE_STATUS -ne 0 ]]; then
+  if git diff --name-only --diff-filter=U | grep -Eq '^agents/[^/]+/system_prompt\.txt$'; then
+    echo "" >&2
+    echo "Prompt conflict detected in agents/*/system_prompt.txt." >&2
+    echo "See docs/updating.md#prompt-update-conflicts for the recommended resolution path." >&2
+  fi
+  exit "$MERGE_STATUS"
+fi
+
+echo ""
+echo "Done. Review CHANGELOG.md for what changed."
